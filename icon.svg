@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <!-- 草地背景 -->
+    <rect width="512" height="512" rx="120" fill="#2E7D32"/>
+    <rect width="512" height="256" rx="120" fill="#4CAF50"/>
+    <!-- 圓滾滾角色 -->
+    <circle cx="256" cy="256" r="140" fill="#ff5252"/>
+    <circle cx="256" cy="256" r="120" fill="#E53935"/>
+    <circle cx="200" cy="220" r="25" fill="#FFF"/>
+    <circle cx="312" cy="220" r="25" fill="#FFF"/>
+    <circle cx="200" cy="220" r="10" fill="#111"/>
+    <circle cx="312" cy="220" r="10" fill="#111"/>
+    <!-- 足球 -->
+    <circle cx="380" cy="380" r="50" fill="#f0ebd8"/>
+    <polygon points="380,350 410,370 400,400 360,400 350,370" fill="#2c3e50"/>
+</svg>
