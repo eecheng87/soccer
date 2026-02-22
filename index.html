@@ -2,16 +2,16 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <!-- PWA 與全螢幕魔法標籤 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- 宣告這是一個 PWA 應用程式 -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#2E7D32">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#2E7D32">
-    <!-- 內嵌 Manifest 讓 Android 知道這是一個可以安裝的 App -->
-    <link rel="manifest" href='data:application/manifest+json,{"name":"圓滾滾足球","short_name":"豬豬足球","display":"standalone","background_color":"#111111","theme_color":"#2E7D32","start_url":"."}'>
+    <link rel="apple-touch-icon" href="./icon.svg">
     
-    <title>圓滾滾足球 - 世界巡迴機關版</title>
+    <title>圓滾滾足球 - 世界巡迴版</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -48,15 +48,19 @@
             letter-spacing: 2px; position: relative; z-index: 10;
         }
 
-        #settings-btn {
-            position: absolute; top: 20px; right: 20px;
+        .top-btn {
+            position: absolute; top: 20px; 
             font-size: 6vw; background: rgba(255,255,255,0.15);
             border-radius: 50%; width: 12vw; height: 12vw;
             display: flex; justify-content: center; align-items: center;
             cursor: pointer; z-index: 60; transition: 0.2s;
-            border: 2px solid rgba(255,255,255,0.3);
+            border: 2px solid rgba(255,255,255,0.3); color: white;
         }
-        #settings-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.3); }
+        .top-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.3); }
+        
+        #settings-btn { right: 20px; }
+        /* 【新增】全螢幕切換按鈕，雙保險機制 */
+        #fullscreen-btn { left: 20px; }
 
         .close-btn {
             position: absolute; top: 20px; left: 20px;
@@ -67,7 +71,6 @@
         }
         .close-btn:active { transform: scale(0.9); }
 
-        /* 音效開關按鈕 */
         #audio-btn {
             position: absolute; top: 20px; right: 20px;
             font-size: 6vw; background: rgba(255,255,255,0.15);
@@ -199,12 +202,25 @@
 </head>
 <body>
 
+<!-- PWA Service Worker 註冊 -->
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then(reg => {
+                console.log('SW registered!', reg);
+            }).catch(err => console.log('SW registration failed', err));
+        });
+    }
+</script>
+
 <div id="game-container">
     <canvas id="gameCanvas" width="768" height="1152"></canvas>
     
     <!-- 選角大廳 -->
     <div id="lobby-layer" class="overlay-layer">
-        <div id="settings-btn" onclick="window.openSettings()">⚙️</div>
+        <!-- 雙保險：手動全螢幕按鈕 -->
+        <div id="fullscreen-btn" class="top-btn" onclick="window.toggleFullscreen()">⛶</div>
+        <div id="settings-btn" class="top-btn" onclick="window.openSettings()">⚙️</div>
         
         <div class="player-select-area flip-180" style="border-color: rgba(255,82,82,0.5); margin-bottom: auto; margin-top: 15%;">
             <div class="player-label" style="color: #ff5252;">上方玩家 (P1)</div>
@@ -314,6 +330,19 @@
 
 <script>
     // ==========================================
+    // 0. 全螢幕切換功能 (Fullscreen API)
+    // ==========================================
+    window.toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.warn("Fullscreen error:", err.message);
+            });
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+        }
+    };
+
+    // ==========================================
     // 0. 音效系統 (Web Audio API)
     // ==========================================
     class AudioEngine {
@@ -323,13 +352,11 @@
             this.bgmPlaying = false;
             this.bgmTimer = null;
         }
-        
         init() {
             if (this.ctx) return;
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             this.ctx = new AudioContext();
         }
-
         toggleMute() {
             this.isMuted = !this.isMuted;
             if (!this.isMuted) {
@@ -341,35 +368,24 @@
             }
             return !this.isMuted;
         }
-
         playTone(freq, type, duration, vol=0.1, slideFreq=null) {
             if (this.isMuted || !this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
             osc.type = type;
-            
             osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-            if (slideFreq) {
-                osc.frequency.exponentialRampToValueAtTime(slideFreq, this.ctx.currentTime + duration);
-            }
-            
+            if (slideFreq) osc.frequency.exponentialRampToValueAtTime(slideFreq, this.ctx.currentTime + duration);
             gain.gain.setValueAtTime(vol, this.ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
-            
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            
-            osc.start();
-            osc.stop(this.ctx.currentTime + duration);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(); osc.stop(this.ctx.currentTime + duration);
         }
-
         playKick() { this.playTone(600, 'sine', 0.2, 0.3, 100); }       
         playBounce() { this.playTone(150, 'square', 0.1, 0.1, 50); }     
         playPostHit() { this.playTone(800, 'triangle', 0.15, 0.2, 400); }
         playPigHit() { this.playTone(200, 'sine', 0.2, 0.2, 80); }       
         playTick() { this.playTone(440, 'square', 0.1, 0.05); }          
         playStart() { this.playTone(880, 'square', 0.3, 0.1); }          
-        
         playGoal() {
             if (this.isMuted || !this.ctx) return;
             let now = this.ctx.currentTime;
@@ -381,24 +397,19 @@
                 osc.frequency.value = freq;
                 gain.gain.setValueAtTime(0.15, now + i * 0.1);
                 gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.1 + 0.2);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start(now + i * 0.1);
-                osc.stop(now + i * 0.1 + 0.2);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(now + i * 0.1); osc.stop(now + i * 0.1 + 0.2);
             });
         }
-
         startBGM() {
             if (this.isMuted || !this.ctx || this.bgmPlaying) return;
             this.bgmPlaying = true;
             this.playBGMNote();
         }
-
         stopBGM() {
             this.bgmPlaying = false;
             if (this.bgmTimer) clearTimeout(this.bgmTimer);
         }
-
         playBGMNote() {
             if (!this.bgmPlaying) return;
             const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; 
@@ -408,7 +419,6 @@
             this.bgmTimer = setTimeout(() => this.playBGMNote(), nextTime);
         }
     }
-
     const audio = new AudioEngine();
 
     // ==========================================
@@ -442,11 +452,7 @@
     let mushrooms = [];
     let cannibalPlants = []; 
 
-    let mapState = {
-        windTimer: 480, windActive: 0, windDir: 1,     
-        lrtTimer: 600, lrtActive: 0, lrtX: -850,
-        vortexTimer: 600, vortexActive: 0 
-    };
+    let mapState = { windTimer: 480, windActive: 0, windDir: 1, lrtTimer: 600, lrtActive: 0, lrtX: -850, vortexTimer: 600, vortexActive: 0 };
 
     const charDescriptions = {
         1: "【速度型】移動如風！適合快速跑位攔截，但踢力較弱。",
@@ -465,32 +471,22 @@
     // ==========================================
     // 2. UI 函數宣告
     // ==========================================
-    function toggleAudio() {
-        const isPlaying = audio.toggleMute();
-        const btn = document.getElementById('audio-btn');
-        if (btn) btn.innerText = isPlaying ? '🔊' : '🔇';
-    }
-    window.toggleAudio = toggleAudio;
-
-    function scrollMenu(id, direction) {
+    window.scrollMenu = function(id, direction) {
         const el = document.getElementById(id);
         if (!el) return;
         const scrollAmount = el.clientWidth * 0.55 * direction; 
         if (el.scrollBy) { el.scrollBy({ left: scrollAmount, behavior: 'smooth' }); } 
         else { el.scrollLeft += scrollAmount; }
     }
-
-    function openSettings() { document.getElementById('lobby-layer').classList.add('d-none'); document.getElementById('settings-layer').classList.remove('d-none'); }
-    function closeSettings() { document.getElementById('settings-layer').classList.add('d-none'); document.getElementById('lobby-layer').classList.remove('d-none'); }
-    
-    function selectMap(mapId) {
+    window.openSettings = function() { document.getElementById('lobby-layer').classList.add('d-none'); document.getElementById('settings-layer').classList.remove('d-none'); }
+    window.closeSettings = function() { document.getElementById('settings-layer').classList.add('d-none'); document.getElementById('lobby-layer').classList.remove('d-none'); }
+    window.selectMap = function(mapId) {
         currentMap = mapId;
         [1,2,3,4,5,6].forEach(i => { let m = document.getElementById('map-'+i); if(m) m.classList.remove('selected'); });
         document.getElementById('map-'+mapId).classList.add('selected');
         drawBeautifulBackground(); 
     }
-
-    function selectChar(player, type) {
+    window.selectChar = function(player, type) {
         if (player === 1) {
             selectedChars.p1 = type;
             for(let i=1; i<=6; i++) { let e = document.getElementById('p1-char'+i); if(e) e.classList.remove('selected'); }
@@ -503,32 +499,27 @@
             document.getElementById('p2-desc').innerText = charDescriptions[type];
         }
     }
-
     function getCanvasPos(clientX, clientY) {
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
         return { x: (clientX - rect.left) * (GAME_WIDTH / rect.width), y: (clientY - rect.top) * (GAME_HEIGHT / rect.height) };
     }
-
     function createConfettiAt(x, y, color) {
         for(let i=0; i<30; i++){ particles.push({ x: x, y: y, vx: (Math.random()-0.5)*15, vy: (Math.random()-0.5)*15, life: 1.5, color: color }); }
     }
-    
     function showEventWarning(text) {
         document.querySelectorAll('.event-warning').forEach(w => {
             w.innerText = text; w.classList.add('show-warning'); 
             setTimeout(() => w.classList.remove('show-warning'), 2000);
         });
     }
-
     function updateScoreDisplay() {
         const s1 = document.getElementById('score-bg-p1');
         const s2 = document.getElementById('score-bg-p2');
         if(s1) { s1.innerText = scores.p1; s1.classList.add('score-bump'); setTimeout(() => s1.classList.remove('score-bump'), 300); }
         if(s2) { s2.innerText = scores.p2; s2.classList.add('score-bump'); setTimeout(() => s2.classList.remove('score-bump'), 300); }
     }
-
-    function startGame(mode) {
+    window.startGame = function(mode) {
         audio.init(); 
         gameMode = mode; 
         document.getElementById('lobby-layer').classList.add('d-none');
@@ -537,8 +528,7 @@
         updateScoreDisplay();
         initGameMechanics();
     }
-
-    function returnToLobby() {
+    window.returnToLobby = function() {
         audio.stopBGM();
         document.getElementById('ui-layer').classList.add('d-none');
         document.getElementById('lobby-layer').classList.remove('d-none');
@@ -546,35 +536,25 @@
         particles = []; windParticles = []; vortexParticles = []; shockwaves = []; itemsOnField = []; popcornWalls = { p1: 0, p2: 0 }; mushrooms = []; cannibalPlants = [];
         if (countdownInterval) clearInterval(countdownInterval);
     }
-
     function startRoundCountdown() {
         audio.stopBGM();
         gameState = 'COUNTDOWN'; player1.reset(); player2.reset(); ball.reset();
-        
         itemsOnField = []; itemSpawnTimer = 300; popcornWalls = { p1: 0, p2: 0 };
         windParticles = []; vortexParticles = []; shockwaves = [];
-        mapState.windTimer = 480; mapState.windActive = 0; mapState.lrtTimer = 600; mapState.lrtActive = 0; mapState.lrtX = -850; 
-        mapState.vortexTimer = 600; mapState.vortexActive = 0; 
-        
+        mapState.windTimer = 480; mapState.windActive = 0; mapState.lrtTimer = 600; mapState.lrtActive = 0; mapState.lrtX = -850; mapState.vortexTimer = 600; mapState.vortexActive = 0; 
         mushrooms = []; cannibalPlants = [];
-        if (currentMap === 4) {
-            mushrooms = [{ x: GAME_WIDTH * 0.3, y: GAME_HEIGHT * 0.42, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.7, y: GAME_HEIGHT * 0.42, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.3, y: GAME_HEIGHT * 0.58, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.7, y: GAME_HEIGHT * 0.58, r: 45, hit: 0 }];
-        } else if (currentMap === 5) {
-            cannibalPlants = [{ x: GAME_WIDTH * 0.15, y: GAME_HEIGHT * 0.5, r: 65, eatTimer: 0, cooldown: 0 }, { x: GAME_WIDTH * 0.85, y: GAME_HEIGHT * 0.5, r: 65, eatTimer: 0, cooldown: 0 }];
-        }
+        if (currentMap === 4) { mushrooms = [{ x: GAME_WIDTH * 0.3, y: GAME_HEIGHT * 0.42, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.7, y: GAME_HEIGHT * 0.42, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.3, y: GAME_HEIGHT * 0.58, r: 45, hit: 0 }, { x: GAME_WIDTH * 0.7, y: GAME_HEIGHT * 0.58, r: 45, hit: 0 }]; } 
+        else if (currentMap === 5) { cannibalPlants = [{ x: GAME_WIDTH * 0.15, y: GAME_HEIGHT * 0.5, r: 65, eatTimer: 0, cooldown: 0 }, { x: GAME_WIDTH * 0.85, y: GAME_HEIGHT * 0.5, r: 65, eatTimer: 0, cooldown: 0 }]; }
 
         const overlay = document.getElementById('round-overlay');
         if (overlay) overlay.classList.remove('hidden');
-        
         document.getElementById('mpi-p1').classList.remove('d-none');
         document.getElementById('mpi-p2').classList.remove('d-none');
-        
         const cdTexts = document.querySelectorAll('.countdown-text');
         cdTexts.forEach(el => { el.classList.remove('d-none'); el.innerText = '3'; el.style.transform = 'translate(-50%, -50%) scale(1)'; });
         
         let count = 3; 
         audio.playTick();
-        
         if (countdownInterval) clearInterval(countdownInterval);
         
         countdownInterval = setInterval(() => {
@@ -602,15 +582,13 @@
             }
         }, 1000);
     }
-
     function initGameMechanics() {
         player1 = new Player(GAME_WIDTH / 2, GAME_HEIGHT * 0.2, selectedChars.p1, true);
         player2 = new Player(GAME_WIDTH / 2, GAME_HEIGHT * 0.8, selectedChars.p2, false);
         ball = new Ball(); 
         startRoundCountdown();
     }
-
-    function triggerGoal(playerNum) {
+    window.triggerGoal = function(playerNum) {
         if (gameState !== 'PLAYING') return;
         gameState = 'GOAL'; shakeAmount = 25; 
         audio.stopBGM();
@@ -620,38 +598,17 @@
         updateScoreDisplay();
 
         const msgs = document.querySelectorAll('.goal-message');
-        
         if (scores.p1 >= WINNING_SCORE || scores.p2 >= WINNING_SCORE) {
             gameState = 'GAMEOVER'; 
-            msgs.forEach(el => {
-                el.innerText = playerNum === 1 ? "紅方獲勝！" : "藍方獲勝！";
-                el.style.color = "#FFEB3B";
-                el.classList.add('show-goal');
-            });
+            msgs.forEach(el => { el.innerText = playerNum === 1 ? "紅方獲勝！" : "藍方獲勝！"; el.style.color = "#FFEB3B"; el.classList.add('show-goal'); });
             for(let i=0; i<15; i++) createConfettiAt(GAME_WIDTH/2, GAME_HEIGHT/2, `hsl(${Math.random()*360}, 80%, 60%)`);
-            setTimeout(() => { if (gameState !== 'GAMEOVER') return; msgs.forEach(el => el.classList.remove('show-goal')); returnToLobby(); }, 4000);
+            setTimeout(() => { if (gameState !== 'GAMEOVER') return; msgs.forEach(el => el.classList.remove('show-goal')); window.returnToLobby(); }, 4000);
             return;
         }
 
-        msgs.forEach(el => {
-            el.innerText = playerNum === 1 ? "紅方得分！" : "藍方得分！";
-            el.style.color = playerNum === 1 ? "#ff5252" : "#4dd0e1";
-            el.classList.add('show-goal');
-        });
+        msgs.forEach(el => { el.innerText = playerNum === 1 ? "紅方得分！" : "藍方得分！"; el.style.color = playerNum === 1 ? "#ff5252" : "#4dd0e1"; el.classList.add('show-goal'); });
         setTimeout(() => { if (gameState !== 'GOAL') return; msgs.forEach(el => el.classList.remove('show-goal')); startRoundCountdown(); }, 2500);
     }
-
-    // ==========================================
-    // 3. 綁定全域變數給 window
-    // ==========================================
-    window.scrollMenu = scrollMenu;
-    window.openSettings = openSettings;
-    window.closeSettings = closeSettings;
-    window.selectMap = selectMap;
-    window.selectChar = selectChar;
-    window.startGame = startGame;
-    window.returnToLobby = returnToLobby;
-    window.triggerGoal = triggerGoal;
 
     // ==========================================
     // 4. 繪圖核心函數
@@ -885,9 +842,6 @@
         ctx.restore();
     }
 
-    // ==========================================
-    // 5. 遊戲類別與機制
-    // ==========================================
     class Ball {
         constructor() { this.radius = 35; this.reset(); }
         reset() { 
