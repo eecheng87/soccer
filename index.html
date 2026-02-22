@@ -204,13 +204,13 @@
 <div id="game-container">
     <canvas id="gameCanvas" width="768" height="1152"></canvas>
     
-    <!-- 全域常駐的實體按鈕 (永遠可點擊，不再被隱藏) -->
+    <!-- 全域常駐的實體按鈕 -->
     <div id="audio-btn" class="top-btn" onclick="window.toggleAudio()" style="right: 20px;">🔇</div>
     <div id="fullscreen-btn" class="top-btn" onclick="window.toggleFullscreen()" style="left: 20px;">⛶</div>
     
     <!-- 選角大廳 -->
     <div id="lobby-layer" class="overlay-layer">
-        <!-- 設定按鈕，放在喇叭左邊一點 -->
+        <!-- 設定按鈕 -->
         <div id="settings-btn" class="top-btn" onclick="window.openSettings()" style="right: calc(30px + 12vw);">⚙️</div>
         
         <div class="player-select-area flip-180" style="border-color: rgba(255,82,82,0.5); margin-bottom: auto; margin-top: 15%;">
@@ -255,8 +255,8 @@
         </div>
     </div>
 
-    <!-- 場地設定頁面 -->
-    <div id="settings-layer" class="overlay-layer d-none" style="z-index: 70; background: rgba(0,0,0,0.95);">
+    <!-- 場地設定頁面 (修復 z-index，完全覆蓋底層按鈕) -->
+    <div id="settings-layer" class="overlay-layer d-none" style="z-index: 110; background: rgba(0,0,0,0.95);">
         <div class="close-btn" onclick="window.closeSettings()">✖</div>
         <h1 class="lobby-title" style="color: #FFEB3B;">世界巡迴</h1>
         
@@ -331,7 +331,7 @@
     };
 
     // ==========================================
-    // 0. 音效系統 (Web Audio API) - 全面升級防崩潰與音量
+    // 0. 音效系統 (Web Audio API)
     // ==========================================
     class AudioEngine {
         constructor() {
@@ -353,12 +353,8 @@
             this.isMuted = !this.isMuted;
             if (!this.isMuted) {
                 this.init();
-                // 確保手機端解除安全休眠狀態
                 if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
-                
-                // 【關鍵修復】立刻發出明確的測試聲，告知玩家「喇叭已開」
                 this.playTone(880, 'sine', 0.1, 0.4);
-
                 if (!this.bgmPlaying && gameState === 'PLAYING') this.startBGM();
             } else {
                 this.stopBGM();
@@ -366,37 +362,23 @@
             return !this.isMuted;
         }
         
-        // 核心發聲函數加入嚴格防呆 (避免 0 造成崩潰)
         playTone(freq, type, duration, vol=0.5, slideFreq=null) {
             if (this.isMuted || !this.ctx) return;
             try {
                 if (this.ctx.state === 'suspended') this.ctx.resume();
-                
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
                 osc.type = type;
-                
                 const now = this.ctx.currentTime;
                 osc.frequency.setValueAtTime(freq, now);
-                if (slideFreq) {
-                    osc.frequency.exponentialRampToValueAtTime(Math.max(slideFreq, 0.001), now + duration);
-                }
-                
-                // 【修復】限制極值，防止 Math 運算錯誤
+                if (slideFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(slideFreq, 0.001), now + duration);
                 gain.gain.setValueAtTime(Math.max(vol, 0.001), now);
                 gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-                
-                osc.connect(gain); 
-                gain.connect(this.ctx.destination);
-                
-                osc.start(now); 
-                osc.stop(now + duration);
-            } catch(e) {
-                console.warn("PlayTone Error:", e);
-            }
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(now); osc.stop(now + duration);
+            } catch(e) { console.warn("PlayTone Error:", e); }
         }
         
-        // 【修復】全面上調音效音量 (Vol: 0.3 ~ 0.8)，適應手機外放喇叭
         playKick() { this.playTone(600, 'sine', 0.2, 0.8, 100); }       
         playBounce() { this.playTone(150, 'square', 0.1, 0.5, 50); }     
         playPostHit() { this.playTone(800, 'triangle', 0.15, 0.6, 400); }
@@ -435,7 +417,6 @@
             if (!this.bgmPlaying) return;
             const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; 
             const freq = scale[Math.floor(Math.random() * scale.length)];
-            // 背景音樂維持輕柔的白噪音音量
             this.playTone(freq, 'sine', 1.0, 0.15); 
             const nextTime = 400 + Math.random() * 400;
             this.bgmTimer = setTimeout(() => this.playBGMNote(), nextTime);
@@ -494,7 +475,6 @@
     // 2. UI 函數宣告
     // ==========================================
     
-    // 【修復】綁定全域 UI 的 ToggleAudio，主動喚醒 AudioContext
     window.toggleAudio = function() {
         audio.init(); 
         const isPlaying = audio.toggleMute();
